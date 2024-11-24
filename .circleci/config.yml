@@ -1,0 +1,57 @@
+version: 2.1
+
+jobs:
+  build:
+    environment:
+      MINIO_STORAGE: https://storage.khulnasoft.com
+    docker:
+      - image: cimg/ruby:2.7
+    working_directory: ~/deb
+    steps:
+      - checkout
+      - install_mc
+      - run:
+          name: Install dependencies
+          command: sudo apt-get update && sudo apt-get install -y dpkg-sig
+      - run:
+          name: Download and import signing key
+          command: |
+            mc cp khulnasoft/secrets/signing-key.asc /tmp
+            gpg --import /tmp/signing-key.asc
+      - run:
+          name: Install fpm and dpkg-sig
+          command: |
+            gem install --no-document fpm
+            sudo apt-get install dpkg-sig
+      - run:
+          name: Package deb
+          command: ./package.sh
+      - run:
+          name: Upload to S3
+          command: |
+            mc cp *.deb khulnasoft/deb
+            mc cp $(ls *.deb | head -n 1) khulnasoft/deb/khulnasoft_latest_amd64.deb
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build:
+          context: Storage
+          filters:
+            branches:
+              only:
+                - main
+
+commands:
+  install_mc:
+    description: Install MinIO client
+    steps:
+      - run:
+          name: Download client
+          working_directory: '~'
+          command: |
+            curl https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
+            chmod +x mc
+            sudo mv mc /usr/local/bin/mc
+            command -v mc
